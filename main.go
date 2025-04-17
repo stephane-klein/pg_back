@@ -303,6 +303,12 @@ func run() (retVal error) {
 	}
 	defer db.Close()
 
+	// Generate a single datetime that will be used in all generated snapshot names
+	var snapshotTime time.Time
+	if opts.UniformSnapshotTimestamp {
+		snapshotTime = time.Now()
+	}
+
 	if !opts.DumpOnly {
 		if !db.superuser {
 			l.Infoln("connection user is not superuser, some information will not be dumped")
@@ -316,7 +322,7 @@ func run() (retVal error) {
 		} else {
 			l.Infoln("dumping globals without role passwords")
 		}
-		if err := dumpGlobals(opts.Directory, opts.Mode, opts.TimeFormat, dumpRolePasswords, conninfo, producedFiles); err != nil {
+		if err := dumpGlobals(opts.Directory, opts.Mode, opts.TimeFormat, dumpRolePasswords, conninfo, producedFiles, snapshotTime); err != nil {
 			return fmt.Errorf("pg_dumpall of globals failed: %w", err)
 		}
 
@@ -326,7 +332,7 @@ func run() (retVal error) {
 			perr *pgPrivError
 		)
 
-		if err := dumpSettings(opts.Directory, opts.Mode, opts.TimeFormat, db, producedFiles); err != nil {
+		if err := dumpSettings(opts.Directory, opts.Mode, opts.TimeFormat, db, producedFiles, snapshotTime); err != nil {
 			if errors.As(err, &verr) || errors.As(err, &perr) {
 				l.Warnln(err)
 			} else {
@@ -334,7 +340,7 @@ func run() (retVal error) {
 			}
 		}
 
-		if err := dumpConfigFiles(opts.Directory, opts.Mode, opts.TimeFormat, db, producedFiles); err != nil {
+		if err := dumpConfigFiles(opts.Directory, opts.Mode, opts.TimeFormat, db, producedFiles, snapshotTime); err != nil {
 			return fmt.Errorf("could not dump configuration files: %w", err)
 		}
 	}
@@ -386,6 +392,7 @@ func run() (retVal error) {
 			CipherPassphrase: passphrase,
 			CipherPublicKey:  publicKey,
 			EncryptKeepSrc:   opts.EncryptKeepSrc,
+			When:             snapshotTime,
 			ExitCode:         -1,
 			PgDumpVersion:    pgDumpVersion,
 		}
@@ -613,8 +620,6 @@ func (d *dump) dump(fc chan<- sumFileJob) error {
 		return fmt.Errorf("could not acquire lock for %s", dbname)
 	}
 
-	d.When = time.Now()
-
 	var fileEnd string
 	switch d.Options.Format {
 	case 'p':
@@ -629,6 +634,10 @@ func (d *dump) dump(fc chan<- sumFileJob) error {
 		}
 
 		fileEnd = "d"
+	}
+
+	if d.When.IsZero() {
+		d.When = time.Now()
 	}
 
 	file := formatDumpPath(d.Directory, d.TimeFormat, fileEnd, dbname, d.When, d.Options.CompressLevel)
@@ -935,7 +944,7 @@ func pgToolVersion(tool string) int {
 	return numver
 }
 
-func dumpGlobals(dir string, mode int, timeFormat string, withRolePasswords bool, conninfo *ConnInfo, fc chan<- sumFileJob) error {
+func dumpGlobals(dir string, mode int, timeFormat string, withRolePasswords bool, conninfo *ConnInfo, fc chan<- sumFileJob, snapshotTime time.Time) error {
 	command := execPath("pg_dumpall")
 	args := []string{"-g", "-w"}
 
@@ -967,7 +976,11 @@ func dumpGlobals(dir string, mode int, timeFormat string, withRolePasswords bool
 		args = append(args, "--no-role-passwords")
 	}
 
-	file := formatDumpPath(dir, timeFormat, "sql", "pg_globals", time.Now(), 0)
+	if snapshotTime.IsZero() {
+		snapshotTime = time.Now()
+	}
+
+	file := formatDumpPath(dir, timeFormat, "sql", "pg_globals", snapshotTime, 0)
 	args = append(args, "-f", file)
 
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
@@ -1008,9 +1021,12 @@ func dumpGlobals(dir string, mode int, timeFormat string, withRolePasswords bool
 	return nil
 }
 
-func dumpSettings(dir string, mode int, timeFormat string, db *pg, fc chan<- sumFileJob) error {
+func dumpSettings(dir string, mode int, timeFormat string, db *pg, fc chan<- sumFileJob, snapshotTime time.Time) error {
+	if snapshotTime.IsZero() {
+		snapshotTime = time.Now()
+	}
 
-	file := formatDumpPath(dir, timeFormat, "out", "pg_settings", time.Now(), 0)
+	file := formatDumpPath(dir, timeFormat, "out", "pg_settings", snapshotTime, 0)
 
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return err
@@ -1044,9 +1060,12 @@ func dumpSettings(dir string, mode int, timeFormat string, db *pg, fc chan<- sum
 	return nil
 }
 
-func dumpConfigFiles(dir string, mode int, timeFormat string, db *pg, fc chan<- sumFileJob) error {
+func dumpConfigFiles(dir string, mode int, timeFormat string, db *pg, fc chan<- sumFileJob, snapshotTime time.Time) error {
 	for _, param := range []string{"hba_file", "ident_file"} {
-		file := formatDumpPath(dir, timeFormat, "out", param, time.Now(), 0)
+		if snapshotTime.IsZero() {
+			snapshotTime = time.Now()
+		}
+		file := formatDumpPath(dir, timeFormat, "out", param, snapshotTime, 0)
 
 		if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 			return err

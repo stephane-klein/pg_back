@@ -47,56 +47,56 @@ var defaultCfg string
 
 // options struct holds command line and configuration file options
 type options struct {
-	NoConfigFile      bool
-	BinDirectory      string
-	Directory         string
-	Mode              int
-	Host              string
-	Port              int
-	Username          string
-	ConnDb            string
-	ExcludeDbs        []string
-	Dbnames           []string
-	WithTemplates     bool
-	Format            rune
-	DirJobs           int
-	CompressLevel     int
-	Jobs              int
-	PauseTimeout      int
-	PurgeInterval     time.Duration
-	PurgeKeep         int
-	SumAlgo           string
-	PreHook           string
-	PostHook          string
-	PgDumpOpts        []string
-	PerDbOpts         map[string]*dbOpts
-	CfgFile           string
-	TimeFormat        string
-	Verbose           bool
-	Quiet             bool
-	Encrypt           bool
-	EncryptKeepSrc    bool
-	CipherPassphrase  string
-	CipherPublicKey   string
-	CipherPrivateKey  string
-	Decrypt           bool
-	WithRolePasswords bool
-	DumpOnly          bool
-
-	Upload         string // values are none, b2, s3, sftp, gcs
-	UploadPrefix   string
-	DeleteUploaded bool
-	Download       string // values are none, b2, s3, sftp, gcs
-	ListRemote     string // values are none, b2, s3, sftp, gcs
-	PurgeRemote    bool
-	S3Region       string
-	S3Bucket       string
-	S3EndPoint     string
-	S3Profile      string
-	S3KeyID        string
-	S3Secret       string
-	S3ForcePath    bool
-	S3DisableTLS   bool
+	NoConfigFile             bool
+	BinDirectory             string
+	Directory                string
+	Mode                     int
+	Host                     string
+	Port                     int
+	Username                 string
+	ConnDb                   string
+	ExcludeDbs               []string
+	Dbnames                  []string
+	WithTemplates            bool
+	Format                   rune
+	DirJobs                  int
+	CompressLevel            int
+	Jobs                     int
+	PauseTimeout             int
+	PurgeInterval            time.Duration
+	PurgeKeep                int
+	SumAlgo                  string
+	PreHook                  string
+	PostHook                 string
+	PgDumpOpts               []string
+	PerDbOpts                map[string]*dbOpts
+	CfgFile                  string
+	TimeFormat               string
+	Verbose                  bool
+	Quiet                    bool
+	Encrypt                  bool
+	EncryptKeepSrc           bool
+	CipherPassphrase         string
+	CipherPublicKey          string
+	CipherPrivateKey         string
+	Decrypt                  bool
+	WithRolePasswords        bool
+	DumpOnly                 bool
+	UniformSnapshotTimestamp bool
+	Upload                   string // values are none, b2, s3, sftp, gcs
+	UploadPrefix             string
+	DeleteUploaded           bool
+	Download                 string // values are none, b2, s3, sftp, gcs
+	ListRemote               string // values are none, b2, s3, sftp, gcs
+	PurgeRemote              bool
+	S3Region                 string
+	S3Bucket                 string
+	S3EndPoint               string
+	S3Profile                string
+	S3KeyID                  string
+	S3Secret                 string
+	S3ForcePath              bool
+	S3DisableTLS             bool
 
 	B2Bucket                string
 	B2KeyID                 string
@@ -300,6 +300,7 @@ func parseCli(args []string) (options, []string, error) {
 	pflag.StringVarP(&purgeKeep, "purge-min-keep", "K", "0", "minimum number of dumps to keep when purging or 'all' to keep\neverything")
 	pflag.StringVar(&opts.PreHook, "pre-backup-hook", "", "command to run before taking dumps")
 	pflag.StringVar(&opts.PostHook, "post-backup-hook", "", "command to run after taking dumps\n")
+	pflag.BoolVar(&opts.UniformSnapshotTimestamp, "uniform-snapshot-timestamp", false, "Apply a single consistent timestamp to all filenames in a snapshot instead of using individual file creation times")
 
 	pflag.BoolVar(&opts.Encrypt, "encrypt", false, "encrypt the dumps")
 	NoEncrypt := pflag.Bool("no-encrypt", false, "do not encrypt the dumps")
@@ -559,7 +560,7 @@ func validateConfigurationFile(cfg *ini.File) error {
 		"sftp_port", "sftp_user", "sftp_password", "sftp_directory", "sftp_identity",
 		"sftp_ignore_hostkey", "gcs_bucket", "gcs_endpoint", "gcs_keyfile",
 		"azure_container", "azure_account", "azure_key", "azure_endpoint", "pg_dump_options",
-		"dump_role_passwords", "dump_only", "upload_prefix", "delete_uploaded",
+		"dump_role_passwords", "dump_only", "upload_prefix", "delete_uploaded", "uniform_snapshot_timestamp",
 	}
 
 gkLoop:
@@ -653,6 +654,7 @@ func loadConfigurationFile(path string) (options, error) {
 	opts.CipherPublicKey = s.Key("cipher_public_key").MustString("")
 	opts.CipherPrivateKey = s.Key("cipher_private_key").MustString("")
 	opts.EncryptKeepSrc = s.Key("encrypt_keep_source").MustBool(false)
+	opts.UniformSnapshotTimestamp = s.Key("uniform_snapshot_timestamp").MustBool(false)
 
 	opts.Upload = s.Key("upload").MustString("none")
 	opts.UploadPrefix = s.Key("upload_prefix").MustString("")
@@ -988,6 +990,8 @@ func mergeCliAndConfigOptions(cliOpts options, configOpts options, onCli []strin
 			opts.Username = cliOpts.Username
 		case "dbname":
 			opts.ConnDb = cliOpts.ConnDb
+		case "uniform-snapshot-timestamp":
+			opts.UniformSnapshotTimestamp = cliOpts.UniformSnapshotTimestamp
 		}
 	}
 
