@@ -38,7 +38,7 @@ import (
 	"time"
 )
 
-var version = "2.6.0"
+var version = "sklein-fork"
 var binDir string
 
 type dump struct {
